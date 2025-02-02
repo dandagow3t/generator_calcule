@@ -1,92 +1,141 @@
 use rand::Rng;
 use std::collections::HashSet;
 
-fn generate_subunit_sums_and_subtractions(with_nine: u32, to_nine: u32, total: u32, range: std::ops::RangeInclusive<u32>) {
-    let mut rng = rand::thread_rng();
-    let mut count = 0;
-    let mut with_nine_remaining = with_nine;
-    let mut to_nine_remaining = to_nine;
-    let mut used_problems = HashSet::new();
-    
-    while count < total {
-        // Decide which type of problem to generate
-        let problem_type = if with_nine_remaining > 0 && to_nine_remaining > 0 {
-            rng.gen_range(0..=2)
-        } else if with_nine_remaining > 0 {
-            if rng.gen_bool(0.3) { 0 } else { 2 }
-        } else if to_nine_remaining > 0 {
-            if rng.gen_bool(0.3) { 1 } else { 2 }
-        } else {
-            2
-        };
+#[derive(Debug)]
+struct Operation {
+    a: u32,
+    b: u32,
+    op: char,
+}
 
-        match problem_type {
-            0 if with_nine_remaining > 0 => {
-                // Subtraction with 9
-                let a = rng.gen_range(11..=18);
-                let problem = (a, 9, '-');
-                if !used_problems.contains(&problem) {
-                    println!("{} - {} =", a, 9);
-                    used_problems.insert(problem);
-                    with_nine_remaining -= 1;
-                    count += 1;
+struct OpsBuilder {
+    operations: Vec<Operation>,
+    used: HashSet<(u32, u32, char)>,
+}
+
+impl OpsBuilder {
+    fn new() -> Self {
+        OpsBuilder {
+            operations: Vec::new(),
+            used: HashSet::new(),
+        }
+    }
+
+    fn add_ops(mut self, mut new_ops: Vec<Operation>) -> Self {
+        for op in new_ops.drain(..) {
+            let key = (op.a, op.b, op.op);
+            let reverse_key = (op.b, op.a, op.op);
+            if !self.used.contains(&key) && (op.op == '-' || !self.used.contains(&reverse_key)) {
+                self.used.insert(key);
+                if op.op == '+' {
+                    self.used.insert(reverse_key);
                 }
-            },
-            1 if to_nine_remaining > 0 => {
-                // Subtraction to 9
-                let a = rng.gen_range(11..=18);
-                let b = a - 9;
-                let problem = (a, b, '-');
-                if !used_problems.contains(&problem) {
-                    println!("{} - {} =", a, b);
-                    used_problems.insert(problem);
-                    to_nine_remaining -= 1;
-                    count += 1;
-                }
-            },
-            _ => {
-                // Regular addition or subtraction
-                let a = rng.gen_range(range.clone());
-                let b = rng.gen_range(range.clone());
-                
-                // Skip if numbers are equal, consecutive, or involve 1
-                if a == b || a == b + 1 || a == b - 1 || a == 1 || b == 1 {
-                    continue;
-                }
-                
-                let operation = if rng.gen_bool(0.5) { '+' } else { '-' };
-                
-                match operation {
-                    '+' => {
-                        let problem = (a, b, '+');
-                        let reverse_problem = (b, a, '+');
-                        if !used_problems.contains(&problem) && !used_problems.contains(&reverse_problem) {
-                            println!("{} + {} =", a, b);
-                            used_problems.insert(problem);
-                            count += 1;
-                        }
-                    },
-                    '-' => {
-                        if a >= b {
-                            let problem = (a, b, '-');
-                            if !used_problems.contains(&problem) {
-                                println!("{} - {} =", a, b);
-                                used_problems.insert(problem);
-                                count += 1;
-                            }
-                        }
-                    },
-                    _ => unreachable!()
-                }
+                self.operations.push(op);
             }
         }
+        self
+    }
+
+    fn shuffle(mut self) -> Self {
+        let mut rng = rand::thread_rng();
+        for i in (1..self.operations.len()).rev() {
+            let j = rng.gen_range(0..=i);
+            self.operations.swap(i, j);
+        }
+        self
+    }
+
+    fn print(self) -> Self {
+        for op in &self.operations {
+            let a_space = if op.a < 10 { " " } else { "" };
+            let b_space = if op.b < 10 { " " } else { "" };
+            println!("{}{} {} {}{} =", a_space, op.a, op.op, b_space, op.b);
+        }
+        self
     }
 }
 
+fn generate_ops(n: u32, range: std::ops::RangeInclusive<u32>) -> Vec<Operation> {
+    let mut rng = rand::thread_rng();
+    let mut ops = Vec::new();
+    let mut used = HashSet::new();
+
+    while ops.len() < n as usize {
+        let a = rng.gen_range(range.clone());
+        let b = rng.gen_range(range.clone());
+        
+        // Skip if numbers are equal, consecutive, or involve 1
+        if a == b || a == b + 1 || a == b - 1 || a == 1 || b == 1 {
+            continue;
+        }
+        
+        let operation = if rng.gen_bool(0.5) { '+' } else { '-' };
+        
+        match operation {
+            '+' => {
+                let key = (a, b, '+');
+                let reverse_key = (b, a, '+');
+                if !used.contains(&key) && !used.contains(&reverse_key) {
+                    used.insert(key);
+                    used.insert(reverse_key);
+                    ops.push(Operation { a, b, op: '+' });
+                }
+            },
+            '-' => {
+                if a >= b {
+                    let key = (a, b, '-');
+                    if !used.contains(&key) {
+                        used.insert(key);
+                        ops.push(Operation { a, b, op: '-' });
+                    }
+                }
+            },
+            _ => unreachable!()
+        }
+    }
+    ops
+}
+
+fn generate_sub_with_nine(n: u32) -> Vec<Operation> {
+    let mut rng = rand::thread_rng();
+    let mut ops = Vec::new();
+    let mut used = HashSet::new();
+
+    while ops.len() < n as usize {
+        let a = rng.gen_range(11..=18);
+        let key = (a, 9, '-');
+        if !used.contains(&key) {
+            used.insert(key);
+            ops.push(Operation { a, b: 9, op: '-' });
+        }
+    }
+    ops
+}
+
+fn generate_sub_to_nine(n: u32) -> Vec<Operation> {
+    let mut rng = rand::thread_rng();
+    let mut ops = Vec::new();
+    let mut used = HashSet::new();
+
+    while ops.len() < n as usize {
+        let a = rng.gen_range(11..=18);
+        let b = a - 9;
+        let key = (a, b, '-');
+        if !used.contains(&key) {
+            used.insert(key);
+            ops.push(Operation { a, b, op: '-' });
+        }
+    }
+    ops
+}
+
 fn main() {
-    // Example: 5 problems with subtraction with 9, 5 problems with subtraction to 9,
-    // and 20 other random problems
-    generate_subunit_sums_and_subtractions(10, 10, 50, 1..=19);
+    OpsBuilder::new()
+        .add_ops(generate_ops(20, 1..=19))
+        .add_ops(generate_sub_with_nine(5))
+        .add_ops(generate_sub_to_nine(5))
+        .shuffle()
+        .print();
     
     println!("Done");
 }
